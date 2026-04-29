@@ -3,75 +3,180 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>World User Map v2</title>
+<title>OECD World User Map</title>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css" />
 <style>
-body{margin:0;font-family:Arial,sans-serif;background:#eef1f4;color:#222}
+body{margin:0;font-family:Arial,sans-serif;background:#eef1f4}
 header{padding:14px 18px;background:#111;color:#fff;font-size:20px;font-weight:700}
 .wrap{display:grid;grid-template-columns:380px 1fr;height:calc(100vh - 52px)}
 .panel{background:#fff;padding:16px;overflow:auto;border-right:1px solid #ddd}
 #map{height:100%;width:100%}
-input,button{width:100%;padding:10px;margin-top:8px;box-sizing:border-box;border-radius:10px;font-size:14px}
-input{border:1px solid #ccc}
-button{border:none;background:#d43;color:#fff;font-weight:700;cursor:pointer}
-button.secondary{background:#666}
-button:disabled{opacity:.6;cursor:wait}
+select,input,button{width:100%;padding:10px;margin-top:8px;box-sizing:border-box;border-radius:10px;font-size:14px}
+input,select{border:1px solid #ccc}
+button{border:none;background:#d33;color:#fff;font-weight:700;cursor:pointer}
+button:disabled{opacity:.6}
 .card{border:1px solid #ddd;border-radius:12px;padding:10px;margin-top:10px;background:#fafafa}
 .small{font-size:12px;color:#666}
 #status{margin-top:8px;min-height:18px}
-@media(max-width:900px){.wrap{grid-template-columns:1fr;grid-template-rows:430px auto}.panel{order:2}}
 </style>
 </head>
 <body>
-<header>World User Map v2</header>
+<header>OECD World User Map</header>
 <div class="wrap">
 <div class="panel">
 <h3>ユーザー登録</h3>
 <input id="name" placeholder="名前">
-<input id="home" placeholder="住んでいるところ 例: Columbus, Ohio, USA">
-<input id="freq" placeholder="よくいるところ 例: Tsukuba, Ibaraki, Japan">
-<input id="origin" placeholder="出身地 例: Tsukuba, Ibaraki, Japan">
+
+<label class="small">国（OECD）</label>
+<select id="country" onchange="updateStateOptions()"></select>
+
+<label class="small">州・県（対応国のみ）</label>
+<select id="state"></select>
+
+<label class="small">都市</label>
+<input id="city" placeholder="Tokyo / New York / Paris">
+
+<label class="small">住んでいるところ</label>
+<input id="home" placeholder="都市名">
+<label class="small">よくいるところ</label>
+<input id="freq" placeholder="都市名">
+<label class="small">出身地</label>
+<input id="origin" placeholder="都市名">
+
 <button onclick="addUser()">追加</button>
-<button class="secondary" onclick="clearAll()">全削除</button>
-<div id="status" class="small">都市名 + 都道府県(州)名 + 国名まで入れるとよいだろう</div>
+<button onclick="clearAll()">全削除</button>
+
+<div id="status" class="small">OECD国ベース。都市は自由入力＋ジオコーディング。</div>
 <div id="list"></div>
 </div>
 <div id="map"></div>
 </div>
+
 <script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
-const map=L.map('map',{worldCopyJump:true}).setView([20,0],2);
-L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:18,attribution:'&copy; OpenStreetMap'}).addTo(map);
-let users=JSON.parse(localStorage.getItem('worldUsersV2')||'[]');
+const OECD = [
+ {code:"JP",name:"Japan"},
+ {code:"US",name:"United States"},
+ {code:"CA",name:"Canada"},
+ {code:"GB",name:"United Kingdom"},
+ {code:"DE",name:"Germany"},
+ {code:"FR",name:"France"},
+ {code:"IT",name:"Italy"},
+ {code:"ES",name:"Spain"},
+ {code:"AU",name:"Australia"},
+ {code:"KR",name:"South Korea"},
+ {code:"MX",name:"Mexico"},
+ {code:"NL",name:"Netherlands"},
+ {code:"SE",name:"Sweden"},
+ {code:"CH",name:"Switzerland"},
+ {code:"BE",name:"Belgium"},
+ {code:"NO",name:"Norway"},
+ {code:"DK",name:"Denmark"},
+ {code:"FI",name:"Finland"},
+ {code:"IE",name:"Ireland"},
+ {code:"PT",name:"Portugal"}
+];
+
+const STATE = {
+ US:["Ohio","California","New York","Texas"],
+ JP:["Tokyo","Osaka","Hokkaido","Kanagawa"],
+ CA:["Ontario","Quebec","British Columbia"],
+ AU:["New South Wales","Victoria","Queensland"]
+};
+
+const map=L.map('map').setView([20,0],2);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:18}).addTo(map);
+
+let users=JSON.parse(localStorage.getItem('oecdUsers')||'[]');
 let layers=[];
-const statusEl=document.getElementById('status');
-function setStatus(t){statusEl.textContent=t;}
-function setButtons(dis){document.querySelectorAll('button').forEach(b=>b.disabled=dis)}
-async function geocode(q){
- const urls=[
- `https://photon.komoot.io/api/?limit=1&q=${encodeURIComponent(q)}`,
- `https://nominatim.openstreetmap.org/search?format=json&limit=1&q=${encodeURIComponent(q)}`
- ];
- for(const url of urls){
-  try{
-   const r=await fetch(url);
-   const d=await r.json();
-   if(d.features&&d.features.length){const f=d.features[0];return {lat:f.geometry.coordinates[1],lng:f.geometry.coordinates[0],label:(f.properties.name||q)+(f.properties.country?', '+f.properties.country:'')}}
-   if(Array.isArray(d)&&d.length){return {lat:+d[0].lat,lng:+d[0].lon,label:d[0].display_name}}
-  }catch(e){}
- }
- throw new Error('not found');
+
+function initCountries(){
+ const c=document.getElementById('country');
+ OECD.forEach(x=>{
+  const o=document.createElement('option');o.value=x.code;o.textContent=x.name;c.appendChild(o);
+ });
 }
-function color(t){return t==='home'?'#2563eb':t==='freq'?'#16a34a':'#dc2626'}
-function draw(){layers.forEach(x=>map.removeLayer(x));layers=[];const bounds=[];
- users.forEach((u,i)=>{const pts=[];['home','freq','origin'].forEach(t=>{const p=u[t];const m=L.circleMarker([p.lat,p.lng],{radius:7,color:color(t),fillOpacity:.85}).bindPopup('<b>'+u.name+'</b><br>'+t+': '+p.label).addTo(map);layers.push(m);bounds.push([p.lat,p.lng]);pts.push([p.lat,p.lng]);});const line=L.polyline(pts,{weight:2,opacity:.65}).addTo(map);layers.push(line);});
- if(bounds.length) map.fitBounds(bounds,{padding:[40,40]}); renderList();}
-function renderList(){const list=document.getElementById('list');list.innerHTML='';users.forEach((u,i)=>{const d=document.createElement('div');d.className='card';d.innerHTML='<b>'+u.name+'</b><br><span class="small">Home:</span> '+u.home.label+'<br><span class="small">Frequent:</span> '+u.freq.label+'<br><span class="small">Origin:</span> '+u.origin.label+'<br><button onclick="removeUser('+i+')">削除</button>';list.appendChild(d);});}
-async function addUser(){const name=nameEl.value.trim();const home=homeEl.value.trim();const freq=freqEl.value.trim();const origin=originEl.value.trim();if(!name||!home||!freq||!origin){setStatus('全部入力してください');return;}setButtons(true);setStatus('検索中... 地球をひっくり返しています');try{const [h,f,o]=await Promise.all([geocode(home),geocode(freq),geocode(origin)]);users.push({name,home:h,freq:f,origin:o});localStorage.setItem('worldUsersV2',JSON.stringify(users));['name','home','freq','origin'].forEach(id=>document.getElementById(id).value='');draw();setStatus('追加完了！');}catch(e){setStatus('検索失敗。違う入力方法を試してみてね');}finally{setButtons(false)}}
-function removeUser(i){users.splice(i,1);localStorage.setItem('worldUsersV2',JSON.stringify(users));draw();setStatus('削除しました。存在は儚い。')}
-function clearAll(){if(confirm('全データ削除します')){users=[];localStorage.removeItem('worldUsersV2');draw();setStatus('全削除しました。文明リセットです。')}}
-const nameEl=document.getElementById('name'),homeEl=document.getElementById('home'),freqEl=document.getElementById('freq'),originEl=document.getElementById('origin');
-draw();
+
+function updateStateOptions(){
+ const c=document.getElementById('country').value;
+ const s=document.getElementById('state');
+ s.innerHTML='';
+ (STATE[c]||["N/A"]).forEach(v=>{
+  const o=document.createElement('option');o.value=v;o.textContent=v;s.appendChild(o);
+ });
+}
+
+async function geocode(q){
+ const url=`https://nominatim.openstreetmap.org/search?format=json&limit=1&q=${encodeURIComponent(q)}`;
+ const r=await fetch(url);
+ const d=await r.json();
+ if(!d.length) throw new Error("not found");
+ return {lat:+d[0].lat,lng:+d[0].lon,label:d[0].display_name};
+}
+
+function draw(){
+ layers.forEach(l=>map.removeLayer(l));layers=[];
+ const bounds=[];
+ users.forEach(u=>{
+  const pts=[];
+  ['home','freq','origin'].forEach(t=>{
+   const p=u[t];
+   const m=L.circleMarker([p.lat,p.lng],{radius:7}).addTo(map);
+   layers.push(m);
+   pts.push([p.lat,p.lng]);
+   bounds.push([p.lat,p.lng]);
+  });
+  layers.push(L.polyline(pts).addTo(map));
+ });
+ if(bounds.length) map.fitBounds(bounds);
+ render();
+}
+
+function render(){
+ const list=document.getElementById('list');list.innerHTML='';
+ users.forEach((u,i)=>{
+  const d=document.createElement('div');d.className='card';
+  d.innerHTML=`<b>${u.name}</b><br>${u.country} / ${u.state}<br>${u.city}<br><button onclick="removeUser(${i})">削除</button>`;
+  list.appendChild(d);
+ });
+}
+
+async function addUser(){
+ const name=nameEl.value.trim();
+ const country=document.getElementById('country').value;
+ const state=document.getElementById('state').value;
+ const city=cityEl.value.trim();
+ const home=homeEl.value.trim();
+ const freq=freqEl.value.trim();
+ const origin=originEl.value.trim();
+ if(!name||!city){alert('必須項目不足');return;}
+ setStatus('検索中');setButtons(true);
+ try{
+  const [h,f,o]=await Promise.all([
+   geocode(city+","+country),
+   geocode(freq+","+country),
+   geocode(origin+","+country)
+  ]);
+  users.push({name,country,state,city,home:h,freq:f,origin:o});
+  localStorage.setItem('oecdUsers',JSON.stringify(users));
+  draw();
+ }catch(e){setStatus('検索失敗')}
+ setButtons(false);
+}
+
+function removeUser(i){users.splice(i,1);localStorage.setItem('oecdUsers',JSON.stringify(users));draw();}
+function clearAll(){users=[];localStorage.removeItem('oecdUsers');draw();}
+
+function setButtons(b){document.querySelectorAll('button').forEach(x=>x.disabled=b)}
+function setStatus(t){document.getElementById('status').textContent=t}
+
+const nameEl=document.getElementById('name');
+const cityEl=document.getElementById('city');
+const homeEl=document.getElementById('home');
+const freqEl=document.getElementById('freq');
+const originEl=document.getElementById('origin');
+
+initCountries();updateStateOptions();draw();
 </script>
 </body>
 </html>
