@@ -29,11 +29,11 @@ button:disabled{opacity:.6;cursor:wait}
 <h3>ユーザー登録</h3>
 <input id="name" placeholder="名前">
 <input id="home" placeholder="住んでいるところ 例: Columbus, Ohio, USA">
-<input id="freq" placeholder="よくいるところ 例: Chicago, Illinois, USA">
-<input id="origin" placeholder="出身地 例: Tokyo, Japan">
+<input id="freq" placeholder="よくいるところ 例: Tsukuba, Ibaraki, Japan">
+<input id="origin" placeholder="出身地 例: Tsukuba, Ibaraki, Japan">
 <button onclick="addUser()">追加</button>
 <button class="secondary" onclick="clearAll()">全削除</button>
-<div id="status" class="small">都市名 + 国名まで入れると精度が上がります。地名の重複は人類の癖です。</div>
+<div id="status" class="small">都市名 + 都道府県(州)名 + 国名まで入れるとよいだろう</div>
 <div id="list"></div>
 </div>
 <div id="map"></div>
@@ -67,7 +67,7 @@ function draw(){layers.forEach(x=>map.removeLayer(x));layers=[];const bounds=[];
  users.forEach((u,i)=>{const pts=[];['home','freq','origin'].forEach(t=>{const p=u[t];const m=L.circleMarker([p.lat,p.lng],{radius:7,color:color(t),fillOpacity:.85}).bindPopup('<b>'+u.name+'</b><br>'+t+': '+p.label).addTo(map);layers.push(m);bounds.push([p.lat,p.lng]);pts.push([p.lat,p.lng]);});const line=L.polyline(pts,{weight:2,opacity:.65}).addTo(map);layers.push(line);});
  if(bounds.length) map.fitBounds(bounds,{padding:[40,40]}); renderList();}
 function renderList(){const list=document.getElementById('list');list.innerHTML='';users.forEach((u,i)=>{const d=document.createElement('div');d.className='card';d.innerHTML='<b>'+u.name+'</b><br><span class="small">Home:</span> '+u.home.label+'<br><span class="small">Frequent:</span> '+u.freq.label+'<br><span class="small">Origin:</span> '+u.origin.label+'<br><button onclick="removeUser('+i+')">削除</button>';list.appendChild(d);});}
-async function addUser(){const name=nameEl.value.trim();const home=homeEl.value.trim();const freq=freqEl.value.trim();const origin=originEl.value.trim();if(!name||!home||!freq||!origin){setStatus('全部入力してください');return;}setButtons(true);setStatus('検索中... 地球をひっくり返しています');try{const [h,f,o]=await Promise.all([geocode(home),geocode(freq),geocode(origin)]);users.push({name,home:h,freq:f,origin:o});localStorage.setItem('worldUsersV2',JSON.stringify(users));['name','home','freq','origin'].forEach(id=>document.getElementById(id).value='');draw();setStatus('追加完了。珍しく順調です。');}catch(e){setStatus('検索失敗。都市名, 州, 国名まで詳しく入力してください。');}finally{setButtons(false)}}
+async function addUser(){const name=nameEl.value.trim();const home=homeEl.value.trim();const freq=freqEl.value.trim();const origin=originEl.value.trim();if(!name||!home||!freq||!origin){setStatus('全部入力してください');return;}setButtons(true);setStatus('検索中... 地球をひっくり返しています');try{const [h,f,o]=await Promise.all([geocode(home),geocode(freq),geocode(origin)]);users.push({name,home:h,freq:f,origin:o});localStorage.setItem('worldUsersV2',JSON.stringify(users));['name','home','freq','origin'].forEach(id=>document.getElementById(id).value='');draw();setStatus('追加完了！');}catch(e){setStatus('検索失敗。違う入力方法を試してみてね');}finally{setButtons(false)}}
 function removeUser(i){users.splice(i,1);localStorage.setItem('worldUsersV2',JSON.stringify(users));draw();setStatus('削除しました。存在は儚い。')}
 function clearAll(){if(confirm('全データ削除します')){users=[];localStorage.removeItem('worldUsersV2');draw();setStatus('全削除しました。文明リセットです。')}}
 const nameEl=document.getElementById('name'),homeEl=document.getElementById('home'),freqEl=document.getElementById('freq'),originEl=document.getElementById('origin');
