@@ -3,53 +3,56 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Global User Map (Autocomplete)</title>
+<title>Global Administrative Map v4</title>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css"/>
 <style>
 body{margin:0;font-family:Arial,sans-serif;background:#eef1f4}
 header{padding:14px 18px;background:#111;color:#fff;font-size:20px;font-weight:700}
-.wrap{display:grid;grid-template-columns:380px 1fr;height:calc(100vh - 52px)}
+.wrap{display:grid;grid-template-columns:420px 1fr;height:calc(100vh - 52px)}
 .panel{background:#fff;padding:14px;overflow:auto;border-right:1px solid #ddd}
 #map{height:100%;width:100%}
-input,button{width:100%;padding:10px;margin-top:8px;box-sizing:border-box;border-radius:10px;font-size:14px}
-input{border:1px solid #ccc}
+input,select,button{width:100%;padding:10px;margin-top:8px;box-sizing:border-box;border-radius:10px;font-size:14px}
+input,select{border:1px solid #ccc}
 button{border:none;background:#d33;color:#fff;font-weight:700;cursor:pointer}
 button:disabled{opacity:.5}
 .card{border:1px solid #ddd;border-radius:12px;padding:10px;margin-top:10px;background:#fafafa}
 .small{font-size:12px;color:#666}
-.suggest-box{position:relative}
-.suggestions{position:absolute;top:100%;left:0;right:0;background:#fff;border:1px solid #ccc;border-radius:8px;z-index:999;max-height:180px;overflow:auto}
-.suggestions div{padding:8px;cursor:pointer}
-.suggestions div:hover{background:#eee}
+.suggest{position:relative}
+.sugbox{position:absolute;background:#fff;border:1px solid #ccc;border-radius:8px;z-index:999;max-height:200px;overflow:auto;width:100%}
+.sugbox div{padding:6px;cursor:pointer}
+.sugbox div:hover{background:#eee}
 #status{margin-top:8px;min-height:18px}
 </style>
 </head>
 <body>
-<header>Global User Map (Autocomplete)</header>
+<header>Global Administrative Map v4 (Full Countries + Geo Search)</header>
 <div class="wrap">
 <div class="panel">
 <h3>ユーザー登録</h3>
 <input id="name" placeholder="名前">
 
-<div class="suggest-box">
-<input id="home" placeholder="住んでいる場所（都市/住所/日本語OK）">
-<div id="homeSug" class="suggestions"></div>
+<label class="small">国（全世界）</label>
+<select id="country"></select>
+
+<div class="suggest">
+<input id="home" placeholder="住んでいる場所（都市・行政区）">
+<div id="homeSug" class="sugbox"></div>
 </div>
 
-<div class="suggest-box">
+<div class="suggest">
 <input id="freq" placeholder="よくいる場所">
-<div id="freqSug" class="suggestions"></div>
+<div id="freqSug" class="sugbox"></div>
 </div>
 
-<div class="suggest-box">
+<div class="suggest">
 <input id="origin" placeholder="出身地">
-<div id="originSug" class="suggestions"></div>
+<div id="originSug" class="sugbox"></div>
 </div>
 
 <button onclick="addUser()">追加</button>
 <button onclick="clearAll()">全削除</button>
 
-<div id="status" class="small">世界中検索対応（Nominatim + Photon）。入力すると候補が出ます。</div>
+<div id="status" class="small">国リストはREST Countries APIで全取得。地名は世界フル検索。</div>
 <div id="list"></div>
 </div>
 <div id="map"></div>
@@ -60,56 +63,53 @@ button:disabled{opacity:.5}
 const map=L.map('map').setView([20,0],2);
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:18}).addTo(map);
 
-let users=JSON.parse(localStorage.getItem('globalUsers')||'[]');
+let users=JSON.parse(localStorage.getItem('v4users')||'[]');
 let layers=[];
+let countries=[];
 
-function debounce(fn,delay){let t;return(...args)=>{clearTimeout(t);t=setTimeout(()=>fn(...args),delay)}}
+async function loadCountries(){
+ const r=await fetch('https://restcountries.com/v3.1/all');
+ const d=await r.json();
+ countries=d.map(c=>({name:c.name.common,code:c.cca2})).sort((a,b)=>a.name.localeCompare(b.name));
+ const sel=document.getElementById('country');
+ countries.forEach(c=>{
+  const o=document.createElement('option');o.value=c.name;o.textContent=c.name;sel.appendChild(o);
+ });
+}
+
+function debounce(fn,t){let x;return(...a)=>{clearTimeout(x);x=setTimeout(()=>fn(...a),t)}}
 
 async function search(q){
  if(!q) return [];
  const url=`https://nominatim.openstreetmap.org/search?format=json&addressdetails=1&limit=5&q=${encodeURIComponent(q)}`;
- try{
-  const r=await fetch(url);
-  return await r.json();
- }catch(e){return []}
+ try{const r=await fetch(url);return await r.json();}catch(e){return []}
 }
 
-function setupAuto(inputId,sugId){
- const input=document.getElementById(inputId);
- const box=document.getElementById(sugId);
- 
+function attach(inputId,boxId){
+ const i=document.getElementById(inputId);
+ const b=document.getElementById(boxId);
  const run=debounce(async()=>{
-  const q=input.value;
-  const res=await search(q);
-  box.innerHTML='';
-  res.forEach(r=>{
-   const div=document.createElement('div');
-   div.textContent=r.display_name;
-   div.onclick=()=>{
-    input.value=r.display_name;
-    box.innerHTML='';
-   };
-   box.appendChild(div);
+  const res=await search(i.value);
+  b.innerHTML='';
+  res.forEach(x=>{
+   const d=document.createElement('div');
+   d.textContent=x.display_name;
+   d.onclick=()=>{i.value=x.display_name;b.innerHTML=''};
+   b.appendChild(d);
   });
  },300);
- 
- input.addEventListener('input',run);
+ i.addEventListener('input',run);
 }
 
-setupAuto('home','homeSug');
-setupAuto('freq','freqSug');
-setupAuto('origin','originSug');
+attach('home','homeSug');
+attach('freq','freqSug');
+attach('origin','originSug');
 
 async function geocode(q){
- const url=`https://nominatim.openstreetmap.org/search?format=json&limit=1&q=${encodeURIComponent(q)}`;
- const r=await fetch(url);
+ const r=await fetch(`https://nominatim.openstreetmap.org/search?format=json&limit=1&q=${encodeURIComponent(q)}`);
  const d=await r.json();
  if(!d.length) throw new Error('not found');
- return {
-  lat:+d[0].lat,
-  lng:+d[0].lon,
-  label:d[0].display_name
- };
+ return {lat:+d[0].lat,lng:+d[0].lon,label:d[0].display_name};
 }
 
 function draw(){
@@ -131,38 +131,48 @@ function draw(){
 }
 
 function render(){
- const list=document.getElementById('list');
- list.innerHTML='';
+ const list=document.getElementById('list');list.innerHTML='';
  users.forEach((u,i)=>{
   const d=document.createElement('div');
   d.className='card';
-  d.innerHTML=`<b>${u.name}</b><br>${u.home.label}<br>${u.freq.label}<br>${u.origin.label}<br><button onclick="removeUser(${i})">削除</button>`;
+  d.innerHTML=`<b>${u.name}</b><br>${u.country}<br>${u.home.label}<br>${u.freq.label}<br>${u.origin.label}<br><button onclick="removeUser(${i})">削除</button>`;
   list.appendChild(d);
  });
 }
 
 async function addUser(){
- const name=document.getElementById('name').value.trim();
- const home=document.getElementById('home').value;
- const freq=document.getElementById('freq').value;
- const origin=document.getElementById('origin').value;
- if(!name||!home||!freq||!origin){alert('全部入力');return}
- setStatus('検索中...');setButtons(true);
+ const name=nameEl.value.trim();
+ const country=document.getElementById('country').value;
+ const home=homeEl.value.trim();
+ const freq=freqEl.value.trim();
+ const origin=originEl.value.trim();
+ if(!name||!home||!freq||!origin){setStatus('必須項目不足');return}
+ setButtons(true);setStatus('世界検索中...');
  try{
-  const [h,f,o]=await Promise.all([geocode(home),geocode(freq),geocode(origin)]);
-  users.push({name,home:h,freq:f,origin:o});
-  localStorage.setItem('globalUsers',JSON.stringify(users));
+  const [h,f,o]=await Promise.all([
+   geocode(home+","+country),
+   geocode(freq+","+country),
+   geocode(origin+","+country)
+  ]);
+  users.push({name,country,home:h,freq:f,origin:o});
+  localStorage.setItem('v4users',JSON.stringify(users));
   draw();
+  setStatus('追加完了');
  }catch(e){setStatus('検索失敗')}
  setButtons(false);
 }
 
-function removeUser(i){users.splice(i,1);localStorage.setItem('globalUsers',JSON.stringify(users));draw();}
-function clearAll(){users=[];localStorage.removeItem('globalUsers');draw();}
+function removeUser(i){users.splice(i,1);localStorage.setItem('v4users',JSON.stringify(users));draw();}
+function clearAll(){users=[];localStorage.removeItem('v4users');draw();}
 function setButtons(b){document.querySelectorAll('button').forEach(x=>x.disabled=b)}
 function setStatus(t){document.getElementById('status').textContent=t}
 
-draw();
+const nameEl=document.getElementById('name');
+const homeEl=document.getElementById('home');
+const freqEl=document.getElementById('freq');
+const originEl=document.getElementById('origin');
+
+loadCountries();draw();
 </script>
 </body>
 </html>
